@@ -33,12 +33,12 @@
 #include "chromeos/dbus/dbus.h"
 #include "chromeos/dbus/service_constants.h"
 #include "metrics/bootstat.h"
-#include "metrics/metrics_library.h"
 
 #include "login_manager/bindings/device_management_backend.pb.h"
 #include "login_manager/child_job.h"
 #include "login_manager/interface.h"
 #include "login_manager/key_generator.h"
+#include "login_manager/login_metrics.h"
 #include "login_manager/nss_util.h"
 #include "login_manager/owner_key.h"
 
@@ -128,8 +128,6 @@ const char SessionManagerService::kLegalCharacters[] =
 const char SessionManagerService::kIncognitoUser[] = "";
 // static
 const char SessionManagerService::kDeviceOwnerPref[] = "cros.device.owner";
-// static
-const char SessionManagerService::kLoginUserTypeMetric[] = "Login.UserType";
 // static
 const char SessionManagerService::kTestingChannelFlag[] =
     "--testing-channel=NamedTestingInterface:";
@@ -500,22 +498,21 @@ gboolean SessionManagerService::StartSession(gchar* email_address,
   // Now, the flip side...if we believe the current user to be the owner
   // based on the cros.owner.device setting, and he DOESN'T have the private
   // half of the public key, we must mitigate.
-  bool userIsOwner = policy_->CurrentUserIsOwner(current_user_);
-  if (userIsOwner && !can_access_key) {
+  bool user_is_owner = policy_->CurrentUserIsOwner(current_user_);
+  if (user_is_owner && !can_access_key) {
     if (!(*OUT_done = mitigator_->Mitigate(key_.get())))
       return FALSE;
   }
 
   // Send each user login event to UMA (right before we start session
-  // since AreMetricsEnabled returns false in guest mode).
-  MetricsLibrary metrics_lib;
-  metrics_lib.Init();
-  if (current_user_ == kIncognitoUser)
-    metrics_lib.SendEnumToUMA(kLoginUserTypeMetric, 0, 2);
-  else if (userIsOwner)
-    metrics_lib.SendEnumToUMA(kLoginUserTypeMetric, 1, 2);
-  else
-    metrics_lib.SendEnumToUMA(kLoginUserTypeMetric, 2, 2);
+  // since the metrics library does not log events in guest mode).
+  int dev_mode = system_->IsDevMode();
+  if (dev_mode > -1) {
+    LoginMetrics login_metrics;
+    login_metrics.SendLoginUserType(dev_mode,
+                                    current_user_ == kIncognitoUser,
+                                    user_is_owner);
+  }
   *OUT_done =
       upstart_signal_emitter_->EmitSignal(
           "start-user-session",
