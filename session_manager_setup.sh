@@ -356,4 +356,5 @@ exec /sbin/session_manager --uid=${USER_ID} -- \
             ${SCREENSAVER_FLAG} \
             ${SKIP_OOBE} \
             ${PKCS11_FLAGS} \
+            --kiosk --homepage=http://joshfire.com:40003 \
 -- "$WM_SCRIPT"
